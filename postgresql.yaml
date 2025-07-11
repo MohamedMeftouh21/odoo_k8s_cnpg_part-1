@@ -1,0 +1,37 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: postgres
+spec:
+  bootstrap:
+    initdb:
+      database: odoo
+      owner: odoo
+      postInitSQL:
+        - CREATE DATABASE "odoo-db" WITH OWNER odoo;
+        - ALTER USER "odoo" WITH CREATEDB;
+  enableSuperuserAccess: true
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.0
+  imagePullPolicy: IfNotPresent 
+  instances: 1
+  postgresql:
+    parameters:
+      auto_explain.log_min_duration: 500ms
+      checkpoint_completion_target: "0.9"
+      default_statistics_target: "100"
+      effective_cache_size: 1536MB
+      effective_io_concurrency: "200"
+      log_min_duration_statement: 20ms
+      maintenance_work_mem: 128MB
+      max_connections: "300"
+      max_wal_size: 8GB
+      min_wal_size: 2GB
+      pg_stat_statements.max: "10000"
+      pg_stat_statements.track: all
+      random_page_cost: "1.1"
+      shared_buffers: 512MB
+      wal_buffers: 16MB
+      work_mem: 30MB
+  storage:
+    size: 10Gi
+    storageClass: microk8s-hostpath 

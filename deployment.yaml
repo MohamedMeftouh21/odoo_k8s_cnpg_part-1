@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: odoo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: odoo
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: odoo
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: test
+      initContainers:
+        - name: fix-permissions
+          image: odoo:17.0
+          command: ["bash", "-c"]
+          args:
+            - |
+              echo "Fixing permissions for odoo directories..."
+              echo "Getting host user information..."
+              HOST_UID=$(stat -c %u /mnt/extra-addons)
+              HOST_GID=$(stat -c %g /mnt/extra-addons)
+              echo "Host UID: $HOST_UID, Host GID: $HOST_GID"
+              
+              echo "Setting ownership for /var/lib/odoo/ to odoo user..."
+              chown -R odoo: /var/lib/odoo/
+              
+              echo "Setting ownership for /mnt/extra-addons to host user ($HOST_UID:$HOST_GID)..."
+              chown -R $HOST_UID:$HOST_GID /mnt/extra-addons
+              
+              echo "Permissions fixed successfully"
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+          volumeMounts:
+            - name: host-addons
+              mountPath: /mnt/extra-addons
+            - name: filestore
+              mountPath: /var/lib/odoo
+        - name: odoo-init
+          image: odoo:17.0
+          args: ["odoo", "-c", "/etc/odoo/odoo.conf", "-i", "base", "--stop-after-init"]
+          env: &env
+            - name: PGUSER
+              valueFrom: &pguser
+                secretKeyRef:
+                  key: username
+                  name: odoo-db-secret
+            - name: POSTGRES_USER
+              valueFrom: *pguser
+            - name: PGPASSWORD
+              valueFrom: &pgpassword
+                secretKeyRef:
+                  key: password
+                  name: odoo-db-secret
+            - name: POSTGRES_PASSWORD
+              valueFrom: *pgpassword
+          volumeMounts:
+            - name: odoo-config
+              mountPath: /etc/odoo/odoo.conf
+              readOnly: true
+            - name: host-addons
+              mountPath: /mnt/extra-addons
+            - name: filestore
+              mountPath: /var/lib/odoo
+      containers:
+        - name: odoo
+          image: odoo:17.0
+          args: ["odoo", "-c", "/etc/odoo/odoo.conf"]
+          env: *env
+          envFrom: *envFrom
+          volumeMounts:
+            - name: odoo-config
+              mountPath: /etc/odoo/odoo.conf
+              readOnly: true
+            - name: host-addons
+              mountPath: /mnt/extra-addons
+            - name: filestore
+              mountPath: /var/lib/odoo
+
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+            requests:
+              cpu: "1"
+              memory: 1Gi
+          ports:
+            - containerPort: 8069
+              name: web
+            - containerPort: 8072
+              name: websocket
+          readinessProbe:
+            httpGet:
+              path: /web/health
+              port: 8069
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+      volumes:
+        - name: odoo-config
+          hostPath:
+            path: /home/test/odoo_k8s/odoo.conf
+            type: FileOrCreate
+
+
+        - name: filestore
+          hostPath:
+            path: /home/test/odoo_k8s/filestore
+            type: DirectoryOrCreate
+
+        - name: host-addons
+          hostPath:
+            path: /home/test/odoo_k8s/extra-addons
+            type: DirectoryOrCreate
